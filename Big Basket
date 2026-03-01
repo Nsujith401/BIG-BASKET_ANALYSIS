@@ -1,126 +1,148 @@
--- BIGBASKET INVENTORY MANAGEMENT SQL PROJECT
--- ============================================
-
--- Drop table if exists
 DROP TABLE IF EXISTS bigbasket;
 
--- ============================================
--- TABLE CREATION
--- ============================================
-
 CREATE TABLE bigbasket (
-    product_id SERIAL PRIMARY KEY,
-    category VARCHAR(120),
+    productid INTEGER,
+    product VARCHAR(255) NOT NULL,
+    category VARCHAR(150),
+    "sub category" VARCHAR(150),
     brand VARCHAR(120),
-    product_name VARCHAR(150) NOT NULL,
-    mrp NUMERIC(8,2),
-    selling_price NUMERIC(8,2),
-    discount_percent NUMERIC(5,2),
-    stock_quantity INTEGER,
-    weight_in_gms INTEGER,
-    rating NUMERIC(2,1),
-    out_of_stock BOOLEAN
+    saleprice NUMERIC(8,2),
+    marketprice NUMERIC(8,2),
+    rating NUMERIC(3,2),
+    description TEXT
 );
 
--- ============================================
+-- =========================================
 -- DATA EXPLORATION
--- ============================================
+-- =========================================
 
--- Count of rows
+-- 1. Count of rows
 SELECT COUNT(*) FROM bigbasket;
 
--- Sample data
+-- 2. View sample data
 SELECT * FROM bigbasket
 LIMIT 10;
 
--- Check for NULL values
+-- 3. Check for NULL values
 SELECT * FROM bigbasket
-WHERE product_name IS NULL
-   OR category IS NULL
-   OR mrp IS NULL
-   OR selling_price IS NULL
-   OR stock_quantity IS NULL;
+WHERE product IS NULL
+OR category IS NULL
+OR "sub category" IS NULL
+OR brand IS NULL
+OR saleprice IS NULL
+OR marketprice IS NULL
+OR rating IS NULL;
 
--- List different categories
+-- 4. List different product categories
 SELECT DISTINCT category
 FROM bigbasket
 ORDER BY category;
 
--- Products in stock vs out of stock
-SELECT out_of_stock, COUNT(product_id)
+-- 5. Number of products per category
+SELECT category, COUNT(*) AS total_products
 FROM bigbasket
-GROUP BY out_of_stock;
+GROUP BY category
+ORDER BY total_products DESC;
 
--- ============================================
+-- 6. Products appearing multiple times
+SELECT product, COUNT(*) AS number_of_entries
+FROM bigbasket
+GROUP BY product
+HAVING COUNT(*) > 1
+ORDER BY number_of_entries DESC;
+
+-- =========================================
+-- DATA CLEANING
+-- =========================================
+
+-- 7. Products with zero price
+SELECT * FROM bigbasket
+WHERE saleprice = 0 OR marketprice = 0;
+
+-- 8. Delete products where marketprice = 0
+DELETE FROM bigbasket
+WHERE marketprice = 0;
+
+-- 9. Add discount percentage column
+ALTER TABLE bigbasket
+ADD COLUMN discount_percent NUMERIC(5,2);
+
+-- 10. Update discount percentage
+UPDATE bigbasket
+SET discount_percent =
+ROUND(((marketprice - saleprice) / marketprice) * 100, 2);
+
+-- View discount results
+SELECT product, marketprice, saleprice, discount_percent
+FROM bigbasket;
+
+-- =========================================
 -- DATA ANALYSIS QUESTIONS
--- ============================================
+-- =========================================
 
--- Q1. Find the Top 10 Highest Discounted Products
-SELECT product_name, mrp, selling_price, discount_percent
+-- Q1. Top 10 best-value products based on discount percentage
+SELECT product, marketprice, saleprice, discount_percent
 FROM bigbasket
 ORDER BY discount_percent DESC
 LIMIT 10;
 
--- Q2. Find All Out of Stock Products
-SELECT product_name, category, brand
+-- Q2. Products with high market price (>500) but low rating (<3)
+SELECT product, marketprice, rating
 FROM bigbasket
-WHERE out_of_stock = TRUE;
+WHERE marketprice > 500 AND rating < 3
+ORDER BY marketprice DESC;
 
--- Q3. Calculate Total Inventory Value Per Category
+-- Q3. Calculate estimated revenue per category
 SELECT category,
-SUM(selling_price * stock_quantity) AS total_inventory_value
-FROM bigbasket
-WHERE out_of_stock = FALSE
-GROUP BY category
-ORDER BY total_inventory_value DESC;
-
--- Q4. Find Products with MRP > ₹1000 and Discount < 5%
-SELECT product_name, mrp, discount_percent
-FROM bigbasket
-WHERE mrp > 1000
-AND discount_percent < 5
-ORDER BY mrp DESC;
-
--- Q5. Identify Top 5 Categories with Highest Average Rating
-SELECT category,
-ROUND(AVG(rating),2) AS avg_rating
+SUM(saleprice) AS total_revenue
 FROM bigbasket
 GROUP BY category
-ORDER BY avg_rating DESC
+ORDER BY total_revenue DESC;
+
+-- Q4. Products where market price > 1000 and discount < 5%
+SELECT product, marketprice, discount_percent
+FROM bigbasket
+WHERE marketprice > 1000 AND discount_percent < 5
+ORDER BY marketprice DESC;
+
+-- Q5. Top 5 categories with highest average discount
+SELECT category,
+ROUND(AVG(discount_percent),2) AS avg_discount
+FROM bigbasket
+GROUP BY category
+ORDER BY avg_discount DESC
 LIMIT 5;
 
--- Q6. Find Price Per Gram for Products Above 500g
-SELECT product_name, weight_in_gms, selling_price,
-ROUND(selling_price / weight_in_gms, 3) AS price_per_gram
+-- Q6. Best-rated products (rating >= 4.5)
+SELECT product, rating
 FROM bigbasket
-WHERE weight_in_gms >= 500
-ORDER BY price_per_gram ASC;
+WHERE rating >= 4.5
+ORDER BY rating DESC;
 
--- Q7. Group Products into Budget, Mid-Range, Premium Based on MRP
-SELECT product_name, mrp,
+-- Q7. Categorize products by price range
+SELECT product, saleprice,
 CASE 
-    WHEN mrp < 200 THEN 'Budget'
-    WHEN mrp < 800 THEN 'Mid-Range'
+    WHEN saleprice < 100 THEN 'Budget'
+    WHEN saleprice < 500 THEN 'Standard'
     ELSE 'Premium'
 END AS price_category
 FROM bigbasket;
 
--- Q8. Find Low Stock Products (Stock < 20)
-SELECT product_name, category, stock_quantity
+-- Q8. Total number of products per brand
+SELECT brand,
+COUNT(*) AS total_products
 FROM bigbasket
-WHERE stock_quantity < 20
-AND out_of_stock = FALSE
-ORDER BY stock_quantity ASC;
+GROUP BY brand
+ORDER BY total_products DESC;
 
--- Q9. Rank Products Within Each Category by Discount
-SELECT product_name, category, discount_percent,
-RANK() OVER (PARTITION BY category ORDER BY discount_percent DESC) AS rank_in_category
+-- Q9. Rank products by highest sale price within each category
+SELECT product, category, saleprice,
+RANK() OVER (PARTITION BY category ORDER BY saleprice DESC) AS price_rank
 FROM bigbasket;
 
--- Q10. Find Categories Where Total Stock Value Exceeds ₹5,00,000
-SELECT category,
-SUM(selling_price * stock_quantity) AS total_value
+-- Q10. Top 5 highest profit margin products
+SELECT product,
+(marketprice - saleprice) AS profit_margin
 FROM bigbasket
-GROUP BY category
-HAVING SUM(selling_price * stock_quantity) > 500000
-ORDER BY total_value DESC;
+ORDER BY profit_margin DESC
+LIMIT 5;
